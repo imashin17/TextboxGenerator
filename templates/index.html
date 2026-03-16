@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>生産管理777 → kintone 同期ツール</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', 'Hiragino Sans', sans-serif; background: #f4f6f9; color: #333; }
+
+    header {
+      background: #1e6fd4;
+      color: white;
+      padding: 16px 24px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    header h1 { font-size: 1.2rem; }
+    header span { font-size: 0.85rem; opacity: 0.8; }
+
+    .container { max-width: 900px; margin: 24px auto; padding: 0 16px; }
+
+    .step-card {
+      background: white;
+      border-radius: 8px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+      margin-bottom: 20px;
+      overflow: hidden;
+    }
+    .step-header {
+      background: #f0f4fb;
+      padding: 12px 20px;
+      border-bottom: 1px solid #dde3f0;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .step-number {
+      background: #1e6fd4;
+      color: white;
+      width: 26px;
+      height: 26px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.85rem;
+      font-weight: bold;
+      flex-shrink: 0;
+    }
+    .step-header h2 { font-size: 1rem; color: #1e6fd4; }
+    .step-body { padding: 20px; }
+
+    label { display: block; font-size: 0.875rem; margin-bottom: 4px; color: #555; }
+    input[type="text"], input[type="password"], select {
+      width: 100%;
+      padding: 8px 12px;
+      border: 1px solid #cdd3de;
+      border-radius: 6px;
+      font-size: 0.9rem;
+      margin-bottom: 12px;
+    }
+    input:focus, select:focus { outline: none; border-color: #1e6fd4; }
+
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+    .drop-zone {
+      border: 2px dashed #a0b0cc;
+      border-radius: 8px;
+      padding: 32px;
+      text-align: center;
+      cursor: pointer;
+      color: #667;
+      transition: border-color 0.2s, background 0.2s;
+    }
+    .drop-zone:hover, .drop-zone.drag-over { border-color: #1e6fd4; background: #f0f6ff; }
+    .drop-zone p { margin-top: 8px; font-size: 0.85rem; }
+    #file-input { display: none; }
+
+    .btn {
+      padding: 9px 20px;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.9rem;
+      font-weight: 500;
+    }
+    .btn-primary { background: #1e6fd4; color: white; }
+    .btn-primary:hover { background: #1558b0; }
+    .btn-success { background: #1a9e5c; color: white; }
+    .btn-success:hover { background: #148049; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .alert {
+      padding: 10px 14px;
+      border-radius: 6px;
+      font-size: 0.875rem;
+      margin-top: 10px;
+    }
+    .alert-info { background: #e8f4fd; color: #1a5fa5; border: 1px solid #b3d4f5; }
+    .alert-success { background: #e6f9ef; color: #155e3c; border: 1px solid #a3dfc0; }
+    .alert-error { background: #fdecea; color: #9a1c1c; border: 1px solid #f5b3b3; }
+
+    table { width: 100%; border-collapse: collapse; font-size: 0.83rem; margin-top: 12px; }
+    th { background: #f0f4fb; padding: 8px 10px; text-align: left; border-bottom: 2px solid #dde3f0; white-space: nowrap; }
+    td { padding: 7px 10px; border-bottom: 1px solid #eee; }
+    tr:hover td { background: #fafbff; }
+
+    #mapping-table select { margin-bottom: 0; }
+
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-size: 0.75rem;
+      background: #e8f0fe;
+      color: #1e6fd4;
+    }
+
+    .hidden { display: none; }
+    .loading { opacity: 0.6; pointer-events: none; }
+
+    .mode-toggle { display: flex; gap: 16px; margin-bottom: 12px; }
+    .mode-toggle label { display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 0.9rem; margin-bottom: 0; }
+
+    #sync-result { margin-top: 16px; }
+  </style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>生産管理777 → kintone 同期ツール</h1>
+    <span>CSVファイルをkintoneにインポートします</span>
+  </div>
+</header>
+
+<div class="container">
+
+  <!-- STEP 1: kintone接続設定 -->
+  <div class="step-card">
+    <div class="step-header">
+      <div class="step-number">1</div>
+      <h2>kintone接続設定</h2>
+    </div>
+    <div class="step-body">
+      <div class="grid-2">
+        <div>
+          <label>kintoneドメイン</label>
+          <input type="text" id="kintone-domain" placeholder="your-subdomain.cybozu.com">
+        </div>
+        <div>
+          <label>アプリID</label>
+          <input type="text" id="kintone-app-id" placeholder="例: 123">
+        </div>
+      </div>
+      <label>APIトークン</label>
+      <input type="password" id="kintone-api-token" placeholder="kintoneアプリのAPIトークン">
+      <button class="btn btn-primary" id="btn-connect" onclick="connectKintone()">接続テスト・フィールド取得</button>
+      <div id="connect-status"></div>
+    </div>
+  </div>
+
+  <!-- STEP 2: CSVアップロード -->
+  <div class="step-card">
+    <div class="step-header">
+      <div class="step-number">2</div>
+      <h2>CSVファイルのアップロード</h2>
+    </div>
+    <div class="step-body">
+      <div class="drop-zone" id="drop-zone" onclick="document.getElementById('file-input').click()">
+        <svg width="36" height="36" fill="none" stroke="#a0b0cc" stroke-width="2" viewBox="0 0 24 24">
+          <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
+        </svg>
+        <p>クリックまたはCSVファイルをドロップ</p>
+        <p style="font-size:0.75rem;margin-top:4px">Shift_JIS / UTF-8 対応</p>
+      </div>
+      <input type="file" id="file-input" accept=".csv" onchange="uploadCSV(this.files[0])">
+      <div id="upload-status"></div>
+      <div id="csv-preview" class="hidden"></div>
+    </div>
+  </div>
+
+  <!-- STEP 3: フィールドマッピング -->
+  <div class="step-card hidden" id="mapping-card">
+    <div class="step-header">
+      <div class="step-number">3</div>
+      <h2>フィールドマッピング</h2>
+    </div>
+    <div class="step-body">
+      <p style="font-size:0.85rem;color:#555;margin-bottom:12px">
+        CSVの各列をkintoneのどのフィールドに対応させるか設定してください。
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>CSVの列名</th>
+            <th>kintoneフィールド</th>
+          </tr>
+        </thead>
+        <tbody id="mapping-table-body"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- STEP 4: 同期実行 -->
+  <div class="step-card hidden" id="sync-card">
+    <div class="step-header">
+      <div class="step-number">4</div>
+      <h2>同期実行</h2>
+    </div>
+    <div class="step-body">
+      <div class="mode-toggle">
+        <label>
+          <input type="radio" name="sync-mode" value="add" checked>
+          新規追加（全件追加）
+        </label>
+        <label>
+          <input type="radio" name="sync-mode" value="upsert">
+          更新/追加（重複チェックあり）
+        </label>
+      </div>
+      <div id="upsert-key-row" class="hidden">
+        <label>重複チェックに使うフィールド（重複禁止フィールドを選択）</label>
+        <select id="update-key-field"></select>
+      </div>
+      <button class="btn btn-success" id="btn-sync" onclick="syncData()" style="margin-top:8px">
+        kintoneに同期する
+      </button>
+      <div id="sync-result"></div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  let csvHeaders = [];
+  let kintoneFields = [];
+
+  // ドロップゾーン
+  const dropZone = document.getElementById('drop-zone');
+  dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+  dropZone.addEventListener('drop', e => {
+    e.preventDefault();
+    dropZone.classList.remove('drag-over');
+    const file = e.dataTransfer.files[0];
+    if (file) uploadCSV(file);
+  });
+
+  // モード切替
+  document.querySelectorAll('input[name="sync-mode"]').forEach(radio => {
+    radio.addEventListener('change', () => {
+      document.getElementById('upsert-key-row').classList.toggle('hidden', radio.value !== 'upsert');
+    });
+  });
+
+  async function connectKintone() {
+    const domain = document.getElementById('kintone-domain').value.trim();
+    const appId = document.getElementById('kintone-app-id').value.trim();
+    const token = document.getElementById('kintone-api-token').value.trim();
+    const status = document.getElementById('connect-status');
+
+    if (!domain || !appId || !token) {
+      status.innerHTML = '<div class="alert alert-error">全項目を入力してください</div>';
+      return;
+    }
+
+    const btn = document.getElementById('btn-connect');
+    btn.disabled = true;
+    btn.textContent = '接続中...';
+    status.innerHTML = '';
+
+    try {
+      const resp = await fetch('/api/kintone-fields', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({domain, app_id: appId, api_token: token})
+      });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.error || '接続失敗');
+
+      kintoneFields = data.fields;
+      status.innerHTML = `<div class="alert alert-success">接続成功！フィールドを${data.fields.length}件取得しました</div>`;
+      updateMappingTable();
+      updateUpsertKeySelect();
+    } catch (e) {
+      status.innerHTML = `<div class="alert alert-error">エラー: ${e.message}</div>`;
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '接続テスト・フィールド取得';
+    }
+  }
+
+  async function uploadCSV(file) {
+    if (!file) return;
+    const status = document.getElementById('upload-status');
+    const preview = document.getElementById('csv-preview');
+    status.innerHTML = '<div class="alert alert-info">読み込み中...</div>';
+    preview.classList.add('hidden');
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      const resp = await fetch('/api/upload-csv', {method: 'POST', body: formData});
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.error || 'アップロード失敗');
+
+      csvHeaders = data.headers;
+      status.innerHTML = `<div class="alert alert-success">✓ ${file.name} を読み込みました（${data.total_rows}件）</div>`;
+
+      // プレビュー表示
+      let tableHtml = '<table><thead><tr>' +
+        data.headers.map(h => `<th>${escHtml(h)}</th>`).join('') + '</tr></thead><tbody>';
+      data.preview.forEach(row => {
+        tableHtml += '<tr>' + data.headers.map(h => `<td>${escHtml(row[h] || '')}</td>`).join('') + '</tr>';
+      });
+      tableHtml += '</tbody></table><p style="font-size:0.75rem;color:#888;margin-top:6px">最初の5行を表示</p>';
+      preview.innerHTML = tableHtml;
+      preview.classList.remove('hidden');
+
+      updateMappingTable();
+    } catch (e) {
+      status.innerHTML = `<div class="alert alert-error">エラー: ${e.message}</div>`;
+    }
+  }
+
+  function updateMappingTable() {
+    if (!csvHeaders.length) return;
+    const tbody = document.getElementById('mapping-table-body');
+    const card = document.getElementById('mapping-card');
+    const syncCard = document.getElementById('sync-card');
+
+    tbody.innerHTML = csvHeaders.map(col => `
+      <tr>
+        <td>${escHtml(col)}</td>
+        <td>
+          <select id="map-${escAttr(col)}">
+            <option value="">-- マッピングしない --</option>
+            ${kintoneFields.map(f =>
+              `<option value="${escAttr(f.code)}" ${guessMapping(col, f) ? 'selected' : ''}>
+                ${escHtml(f.label)} <span class="badge">${escHtml(f.code)}</span>
+              </option>`
+            ).join('')}
+          </select>
+        </td>
+      </tr>
+    `).join('');
+
+    if (csvHeaders.length) {
+      card.classList.remove('hidden');
+      syncCard.classList.remove('hidden');
+    }
+  }
+
+  function updateUpsertKeySelect() {
+    const sel = document.getElementById('update-key-field');
+    sel.innerHTML = kintoneFields.map(f =>
+      `<option value="${escAttr(f.code)}">${escHtml(f.label)} (${escHtml(f.code)})</option>`
+    ).join('');
+  }
+
+  function guessMapping(csvCol, kintoneField) {
+    const col = csvCol.toLowerCase().replace(/[\s_-]/g, '');
+    const code = kintoneField.code.toLowerCase().replace(/[\s_-]/g, '');
+    const label = kintoneField.label.toLowerCase().replace(/[\s_-]/g, '');
+    return col === code || col === label;
+  }
+
+  async function syncData() {
+    const mapping = {};
+    csvHeaders.forEach(col => {
+      const sel = document.getElementById(`map-${col}`);
+      if (sel && sel.value) mapping[col] = sel.value;
+    });
+
+    if (!Object.keys(mapping).length) {
+      document.getElementById('sync-result').innerHTML =
+        '<div class="alert alert-error">少なくとも1つのフィールドをマッピングしてください</div>';
+      return;
+    }
+
+    const mode = document.querySelector('input[name="sync-mode"]:checked').value;
+    const updateKey = document.getElementById('update-key-field').value;
+
+    const btn = document.getElementById('btn-sync');
+    btn.disabled = true;
+    btn.textContent = '同期中...';
+    document.getElementById('sync-result').innerHTML =
+      '<div class="alert alert-info">kintoneに送信中です。しばらくお待ちください...</div>';
+
+    try {
+      const resp = await fetch('/api/sync', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({field_mapping: mapping, mode, update_key: updateKey})
+      });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.error || '同期失敗');
+
+      const cls = data.success ? 'alert-success' : 'alert-error';
+      let html = `<div class="alert ${cls}">${escHtml(data.message)}`;
+      if (data.errors && data.errors.length) {
+        html += '<ul style="margin-top:6px;padding-left:18px">' +
+          data.errors.map(e => `<li>${escHtml(e)}</li>`).join('') + '</ul>';
+      }
+      html += '</div>';
+      document.getElementById('sync-result').innerHTML = html;
+    } catch (e) {
+      document.getElementById('sync-result').innerHTML =
+        `<div class="alert alert-error">エラー: ${e.message}</div>`;
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'kintoneに同期する';
+    }
+  }
+
+  function escHtml(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+  function escAttr(s) { return String(s).replace(/"/g, '&quot;'); }
+</script>
+</body>
+</html>
