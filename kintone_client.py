@@ -41,13 +41,26 @@ class KintoneClient:
             self.session.headers.update({"X-Cybozu-Authorization": credentials})
         self.session.headers.update({"Content-Type": "application/json"})
 
+    def _raise_for_status(self, resp):
+        """HTTPエラー時にkintoneのエラー詳細を含む例外を発生させる"""
+        if not resp.ok:
+            try:
+                body = resp.json()
+                code = body.get("code", "")
+                message = body.get("message", resp.text)
+                raise requests.HTTPError(
+                    f"{resp.status_code} {code}: {message}", response=resp
+                )
+            except (ValueError, KeyError):
+                resp.raise_for_status()
+
     def get_app_fields(self) -> dict:
         """アプリのフィールド一覧を取得する"""
         resp = self.session.get(
             f"{self.base_url}/app/form/fields.json",
             params={"app": self.app_id},
         )
-        resp.raise_for_status()
+        self._raise_for_status(resp)
         return resp.json().get("properties", {})
 
     def add_records(self, records: list[dict]) -> dict:
@@ -56,7 +69,7 @@ class KintoneClient:
             f"{self.base_url}/records.json",
             json={"app": self.app_id, "records": records},
         )
-        resp.raise_for_status()
+        self._raise_for_status(resp)
         return resp.json()
 
     def upsert_records(
@@ -81,7 +94,7 @@ class KintoneClient:
             f"{self.base_url}/records.json",
             json={"app": self.app_id, "records": upsert_records},
         )
-        resp.raise_for_status()
+        self._raise_for_status(resp)
         return resp.json()
 
     def get_records(self, query: str = "", fields: list[str] = None) -> list[dict]:
@@ -90,5 +103,5 @@ class KintoneClient:
         if fields:
             params["fields[0]"] = fields
         resp = self.session.get(f"{self.base_url}/records.json", params=params)
-        resp.raise_for_status()
+        self._raise_for_status(resp)
         return resp.json().get("records", [])
